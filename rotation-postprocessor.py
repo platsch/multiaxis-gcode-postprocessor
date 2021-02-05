@@ -5,12 +5,13 @@ import os
 import re
 import math
 
-def analyze(file, extruder_l, rotatex = False, rotatey = False, dry = False):
+def analyze(file, extruder_l, rotationlimit, rotatex = False, rotatey = False, dry = False):
     # file handles
     ifh = open(file, 'r')
     (root, ext) = os.path.splitext(file)
     ofh = open(root+'_rotating-axis'+ext, 'w')
 
+    rotationlimit = math.radians(rotationlimit)
  
     # iterate over gcode file line by line
     lastline = ""
@@ -47,6 +48,7 @@ def analyze(file, extruder_l, rotatex = False, rotatey = False, dry = False):
                     z_diff = z - lastz
                     if(length > 0):
                         anglex = math.atan(z_diff/length)
+                        anglex = max(min(anglex, rotationlimit), -rotationlimit)
 
                     newy = y + extruder_l*math.sin(anglex)
                     newz = z - (extruder_l - extruder_l*math.cos(anglex))
@@ -58,12 +60,13 @@ def analyze(file, extruder_l, rotatex = False, rotatey = False, dry = False):
                     z_diff = z - lastz
                     if(length > 0):
                         angley = math.atan(z_diff/length)
+                        angley = max(min(angley, rotationlimit), -rotationlimit)
 
                     #print("angley: " + str(math.degrees(angley)))
                     newx = x + extruder_l*math.sin(angley)
                     newz = z - (extruder_l - extruder_l*math.cos(angley))
 
-            newline += 'G1 X' + "{:.4f}".format(newx) + ' Y' + "{:.4f}".format(newy) + ' Z' + "{:.4f}".format(newz) + ' U' + "{:.4f}".format(math.degrees(angley + anglex)) + 'E' + "{:.4f}".format(e) + rest + '\n'
+            newline += 'G1 X' + "{:.4f}".format(newx) + ' Y' + "{:.4f}".format(newy) + ' Z' + "{:.4f}".format(newz) + ' U' + "{:.4f}".format(math.degrees(angley + anglex)) + ' E' + "{:.4f}".format(e) + rest + '\n'
 
 
         else:
@@ -94,12 +97,15 @@ def analyze(file, extruder_l, rotatex = False, rotatey = False, dry = False):
 
 def usage():
     print('Usage:')
+    print('rotation-postprocessor.py [GCode-File] [Options]')
+    print('Output will be [GCode-File]_rotating-axis.gcode')
     print('')
     print('Either -x or -x or must be provided. If no axis is provided, -y is assumed as default.')
-    print('  -x \t\t enable X-axis rotation')
-    print('  -y \t\t enable Y-axis rotation')
-    print('  -l <length> \t set length of rotating tool (in mm) measured from center of rotation to tooltip')
-    print('  -d \t\t dry run, supress output of E-codes')
+    print('  -x \t\t\t enable X-axis rotation')
+    print('  -y \t\t\t enable Y-axis rotation')
+    print('  -l <length> \t\t set length of rotating tool (in mm) measured from center of rotation to tooltip')
+    print('  -d --dry \t\t dry run, supress output of E-codes')
+    print('  --rotationlimit \t maximum possible angle for tool rotations in degrees. Default: 45.0')
 
 if __name__ == "__main__":
     if(len(sys.argv) < 2):
@@ -107,7 +113,8 @@ if __name__ == "__main__":
     else:
         rotatex = False
         rotatey = False
-        extruder_l = 30
+        extruder_l = 30.0
+        rotationlimit = 45.0
         dry = False
         # Check for valid gcode file
         in_file = sys.argv[1]
@@ -120,7 +127,7 @@ if __name__ == "__main__":
         f.close()
 
         try:
-            opts, args = getopt.getopt(sys.argv[2:],"hxyl:d")
+            opts, args = getopt.getopt(sys.argv[2:],"hxyl:d",["dry", "rotationlimit="])
         except getopt.GetoptError as err:
             print(err)
             usage()
@@ -138,16 +145,19 @@ if __name__ == "__main__":
             elif opt in ("-l"):
                 print("Extruder length is " + str(arg))
                 extruder_l = float(arg)
-            elif opt in ("-d"):
+            elif opt in ("-d", "--dry"):
                 print("Warning: exporting dry code!")
                 dry = True
+            elif opt in ("--rotationlimit"):
+                rotationlimit = float(arg)
+                print("Set rotation limit to {:.4f}".format(rotationlimit))
 
         if(rotatex and rotatey):
-            print("Rotating both axis is currently not supported. This will probably change in the near future!")
+            print("Rotating both axis is currently not supported. This will probably change in the near future!\n")
             usage()
             sys.exit(2)
         if(not rotatex and not rotatey):
             print("No rotation-axis specified, fallback to y as default!")
             rotatey = True
 
-        analyze(in_file, extruder_l, rotatex = rotatex, rotatey = rotatey, dry = dry)
+        analyze(in_file, extruder_l, rotationlimit, rotatex = rotatex, rotatey = rotatey, dry = dry)
